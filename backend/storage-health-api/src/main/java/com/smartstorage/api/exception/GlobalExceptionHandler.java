@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Handles errors globally for all controllers.
@@ -14,6 +15,21 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiError> handleResponseStatusError(
+            ResponseStatusException ex,
+            HttpServletRequest request
+    ) {
+        ApiError error = new ApiError(
+                ex.getStatusCode().value(),
+                "Request failed",
+                ex.getReason() == null ? "Request could not be completed." : ex.getReason(),
+                request.getRequestURI()
+        );
+
+        return ResponseEntity.status(ex.getStatusCode()).body(error);
+    }
 
     /**
      * Handles database errors, including SQLite locked errors.

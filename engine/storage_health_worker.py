@@ -1138,7 +1138,7 @@ class StorageHealthWorker:
             self.db.insert_partition_usage_readings(partition_readings)
 
             try:
-                from storage_ai_analyzer import StorageAiAnalyzer
+                from storage_ai_analyzer import StorageAiAnalyzer, sync_latest_snapshot_to_cloud
 
                 analysis = StorageAiAnalyzer(self.db.db_path).analyze_latest_and_store()
                 logger.info(
@@ -1147,8 +1147,14 @@ class StorageHealthWorker:
                     analysis.failure_probability_30d,
                     analysis.model_confidence,
                 )
+
+                cloud_sync = sync_latest_snapshot_to_cloud(self.db.db_path, analysis)
+                if cloud_sync.get("synced"):
+                    logger.info("Cloud ingest sync complete: endpoint=%s", cloud_sync.get("endpoint"))
+                elif cloud_sync.get("enabled") is False:
+                    logger.info("Cloud ingest sync skipped: %s", cloud_sync.get("reason"))
             except Exception as exc:
-                logger.warning("AI analysis skipped: %s", exc)
+                logger.warning("AI analysis or cloud sync skipped: %s", exc)
 
             self.db.finish_poll_run(poll_run_id, "SUCCESS")
 

@@ -303,10 +303,14 @@ class StorageAiAnalyzer:
                     s.power_on_hours,
                     s.pending_sectors,
                     s.temperature_celsius,
+                    s.raw_json,
                     s.error_message,
                     d.id AS device_id,
                     d.device_name,
+                    d.device_type,
                     d.model_name,
+                    d.serial_number,
+                    d.firmware_version,
                     d.protocol,
                     d.capacity_bytes
                 FROM smart_readings s
@@ -741,12 +745,165 @@ def result_to_dict(result: AnalysisResult) -> Dict[str, Any]:
     }
 
 
+def sync_latest_snapshot_to_cloud(
+    db_path: str,
+    analysis: AnalysisResult,
+    endpoint: Optional[str] = None,
+    token: Optional[str] = None,
+) -> Dict[str, Any]:
+    endpoint = endpoint or resolve_cloud_ingest_endpoint()
+
+    if not endpoint:
+        return {"enabled": False, "synced": False, "reason": "cloud ingest endpoint not configured"}
+
+    analyzer = StorageAiAnalyzer(db_path=db_path)
+    context = analyzer.latest_context()
+
+    if context is None:
+        raise RuntimeError("No local telemetry is available to sync.")
+
+    payload = build_ingest_payload(context, analysis)
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            **ingest_auth_header(token),
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            response_text = response.read().decode("utf-8")
+            response_data = json.loads(response_text) if response_text.strip() else {}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Cloud ingest failed: {exc}") from exc
+
+    return {
+        "enabled": True,
+        "synced": True,
+        "endpoint": endpoint,
+        "response": response_data,
+    }
+
+
+def resolve_cloud_ingest_endpoint() -> Optional[str]:
+    explicit = os.environ.get("CLOUD_INGEST_URL", "").strip()
+    if explicit:
+        return explicit
+
+    base_url = os.environ.get("CLOUD_API_BASE_URL", "").strip()
+    if not base_url:
+        return None
+
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/api"):
+        return f"{normalized}/ingest/snapshot"
+
+    return f"{normalized}/api/ingest/snapshot"
+
+
+def ingest_auth_header(token: Optional[str] = None) -> Dict[str, str]:
+    resolved_token = token if token is not None else os.environ.get("CLOUD_INGEST_TOKEN", "")
+    resolved_token = resolved_token.strip()
+
+    if not resolved_token:
+        return {}
+
+    return {"X-Ingest-Key": resolved_token}
+
+
+def build_ingest_payload(context: TelemetryContext, analysis: AnalysisResult) -> Dict[str, Any]:
+    smart = context.smart
+    disk_io = context.disk_io or {}
+
+    return {
+        "device": {
+            "deviceName": smart.get("device_name"),
+            "deviceType": smart.get("device_type"),
+            "protocol": smart.get("protocol"),
+            "modelName": smart.get("model_name"),
+            "serialNumber": smart.get("serial_number"),
+            "firmwareVersion": smart.get("firmware_version"),
+            "capacityBytes": smart.get("capacity_bytes"),
+        },
+        "smart": {
+            "timestampEpochMs": smart.get("ts_epoch_ms"),
+            "timestampUtc": smart.get("ts_utc"),
+            "smartAvailable": int_to_bool(smart.get("smart_available")),
+            "smartPassed": int_to_optional_bool(smart.get("smart_passed")),
+            "reallocatedSectors": smart.get("reallocated_sectors"),
+            "powerOnHours": smart.get("power_on_hours"),
+            "pendingSectors": smart.get("pending_sectors"),
+            "temperatureCelsius": smart.get("temperature_celsius"),
+            "rawJson": smart.get("raw_json"),
+            "errorMessage": smart.get("error_message"),
+        },
+        "diskIo": {
+            "diskName": disk_io.get("disk_name"),
+            "timestampEpochMs": disk_io.get("ts_epoch_ms"),
+            "timestampUtc": disk_io.get("ts_utc"),
+            "readBytesTotal": disk_io.get("read_bytes_total"),
+            "writeBytesTotal": disk_io.get("write_bytes_total"),
+            "readCountTotal": disk_io.get("read_count_total"),
+            "writeCountTotal": disk_io.get("write_count_total"),
+            "readBytesPerSec": disk_io.get("read_bytes_per_sec"),
+            "writeBytesPerSec": disk_io.get("write_bytes_per_sec"),
+        } if disk_io else None,
+        "partitions": [
+            {
+                "mountpoint": partition.get("mountpoint"),
+                "device": partition.get("device"),
+                "filesystem": partition.get("filesystem"),
+                "timestampEpochMs": partition.get("ts_epoch_ms"),
+                "timestampUtc": partition.get("ts_utc"),
+                "totalBytes": partition.get("total_bytes"),
+                "usedBytes": partition.get("used_bytes"),
+                "freeBytes": partition.get("free_bytes"),
+                "usagePercent": partition.get("usage_percent"),
+            }
+            for partition in context.partitions
+        ],
+        "analysis": {
+            "timestampEpochMs": analysis.timestamp_epoch_ms,
+            "timestampUtc": analysis.timestamp_utc,
+            "failureProbability30d": analysis.failure_probability_30d,
+            "healthScore": analysis.health_score,
+            "riskLevel": analysis.risk_level,
+            "modelName": analysis.model_name,
+            "modelVersion": analysis.model_version,
+            "modelConfidence": analysis.model_confidence,
+            "analysisSummary": analysis.analysis_summary,
+            "recommendation": analysis.recommendation,
+            "topSignalsJson": json.dumps(analysis.top_signals, separators=(",", ":")),
+            "geminiUsed": analysis.gemini_used,
+        },
+    }
+
+
+def int_to_bool(value: Any) -> bool:
+    return int_to_optional_bool(value) is True
+
+
+def int_to_optional_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+
+    try:
+        return int(value) == 1
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run storage AI/ML analysis over the latest SQLite telemetry.")
     parser.add_argument("--db", default=DEFAULT_DB_PATH, help=f"SQLite database path. Default: {DEFAULT_DB_PATH}")
     parser.add_argument("--model", default=str(DEFAULT_MODEL_PATH), help="Serialized model path.")
     parser.add_argument("--init-model", action="store_true", help="Create the serialized model file and exit.")
     parser.add_argument("--json", action="store_true", help="Print the latest analysis as JSON.")
+    parser.add_argument("--sync-cloud", action="store_true", help="Push the latest local telemetry snapshot to the cloud ingest endpoint.")
     return parser.parse_args()
 
 
@@ -763,8 +920,15 @@ def main() -> None:
     analyzer = StorageAiAnalyzer(db_path=db_path, model_path=model_path)
     result = analyzer.analyze_latest_and_store()
 
+    cloud_sync = None
+    if args.sync_cloud:
+        cloud_sync = sync_latest_snapshot_to_cloud(db_path=db_path, analysis=result)
+
     if args.json:
-        print(json.dumps(result_to_dict(result), indent=2))
+        response = result_to_dict(result)
+        if cloud_sync is not None:
+            response["cloudSync"] = cloud_sync
+        print(json.dumps(response, indent=2))
         return
 
     print(
@@ -772,6 +936,8 @@ def main() -> None:
         f"({result.model_confidence:.0f}% confidence)"
     )
     print(result.analysis_summary)
+    if cloud_sync is not None:
+        print(f"Cloud sync: {'sent' if cloud_sync.get('synced') else cloud_sync.get('reason', 'skipped')}")
 
 
 if __name__ == "__main__":

@@ -47,3 +47,34 @@ run-worker-continuous.bat
 ```
 
 Optional Gemini integration uses `GEMINI_API_KEY`. Without it, the Python AI analyzer uses its local plain-English fallback.
+
+## Cloud Sync
+
+The local Python worker can push live device telemetry to the deployed backend.
+
+Render backend environment variables:
+
+```text
+SQLITE_DB_PATH=./storage_health.db
+INGEST_API_KEY=choose-a-shared-secret
+```
+
+Local PowerShell environment variables:
+
+```powershell
+$env:CLOUD_API_BASE_URL="https://your-render-app.onrender.com/api"
+$env:CLOUD_INGEST_TOKEN="choose-a-shared-secret"
+```
+
+Then run:
+
+```powershell
+.\run-cloud-sync-once.bat
+.\run-worker-continuous.bat
+```
+
+The frontend deployed on Vercel should use:
+
+```text
+VITE_API_BASE_URL=https://your-render-app.onrender.com/api
+```
