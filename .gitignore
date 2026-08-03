@@ -1,0 +1,25 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Python
+engine/venv/
+engine/__pycache__/
+engine/**/*.pyc
+engine/*.log
+engine/*.db
+engine/*.db-*
+.env
+
+# Java / Spring Boot
+backend/storage-health-api/target/
+
+# React / Vite
+frontend/sshm-dashboard/node_modules/
+frontend/sshm-dashboard/dist/
+frontend/sshm-dashboard/codex-build-check/
+frontend/sshm-dashboard/.vite/
+
+# Runtime logs
+*.log

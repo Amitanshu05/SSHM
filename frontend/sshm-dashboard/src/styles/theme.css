@@ -1,0 +1,49 @@
+:root {
+  --page: #f5f7fb;
+  --panel: #ffffff;
+  --panel-elevated: #ffffff;
+  --panel-soft: #f7f9fd;
+  --sidebar: #ffffff;
+
+  --text: #08142f;
+  --muted: #5d6984;
+  --subtle: #8a96ac;
+  --light: #f8fafc;
+
+  --border: #dce4f1;
+  --border-strong: #bfd0e8;
+  --chart-grid: #e5ecf7;
+
+  --blue: #0b5bd3;
+  --blue-deep: #073f9c;
+  --blue-soft: #e8f1ff;
+
+  --green: #18a957;
+  --green-soft: #e4f8eb;
+
+  --red: #e33434;
+  --red-soft: #ffe8e8;
+
+  --purple: #6536db;
+  --purple-soft: #eee9ff;
+
+  --amber: #f28c28;
+  --amber-soft: #fff2df;
+
+  --partition-1: #1872f2;
+  --partition-2: #6f40df;
+  --partition-3: #ff922e;
+  --partition-4: #aab2c3;
+
+  --donut-track: #e5ebf5;
+
+  --shadow-soft: 0 12px 32px rgba(8, 20, 47, 0.08);
+  --shadow-card: 0 8px 22px rgba(8, 20, 47, 0.07);
+  --shadow-hover: 0 18px 42px rgba(8, 20, 47, 0.12);
+  --tooltip-shadow: 0 20px 44px rgba(8, 20, 47, 0.17);
+
+  --radius-xl: 8px;
+  --radius-lg: 8px;
+  --radius-md: 8px;
+  --ease-out: cubic-bezier(0.19, 1, 0.22, 1);
+}
